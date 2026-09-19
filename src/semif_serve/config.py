@@ -6,7 +6,8 @@ import os
 from dataclasses import dataclass
 
 # Qwen3.5-4B is SemIf's direct_option_logits model. MiniCPM5-2B is deliberately not a default:
-# its chat template breaks SemIf's shared-prefix guard, so it cannot serve batched decisions.
+# its vocabulary merges `]}` into one token, which defeats the single-token trim SemIf uses to
+# find the shared state prefix, on exactly the states this server is sent. See the README.
 DEFAULT_MODEL = "Qwen/Qwen3.5-4B"
 DEFAULT_REVISION = "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
 

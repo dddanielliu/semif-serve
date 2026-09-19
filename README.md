@@ -114,9 +114,17 @@ at a 2918-token prefix: batch 12 peaks at 10.7GiB, batch 16 OOMs. On a larger ca
 
 ## Model support
 
-`Qwen/Qwen3.5-4B` is the default and the only model verified here. **MiniCPM5-2B does not
-work**: its chat template fails SemIf's shared-prefix guard, so it cannot serve batched
-decisions at all. Qwen3-0.6B runs but chooses poorly.
+`Qwen/Qwen3.5-4B` is the default and the only model verified here.
+
+**MiniCPM5-2B is not usable for this workload.** Not for lack of capability: SemIf rebuilds
+the shared state prefix by serialising the evidence and dropping exactly one token to clear
+any merge at the boundary. MiniCPM's vocabulary merges `]}` into a single token, so one token
+is not enough and the reconstructed prefix stops being a prefix of the real prompt. It passes
+on small states and fails on states ending in `[]`. jev-ultrafast's state always ends with
+`recent_actions`, which is empty on the first step, so it fails there routinely. Qwen's
+vocabulary does not form that merge.
+
+Qwen3-0.6B runs but chooses poorly.
 
 ## Fidelity and its limits
 
