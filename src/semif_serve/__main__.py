@@ -36,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("Loading %s at %s", settings.model, settings.revision[:12])
         metadata = engine.load()
         logger.info("Loaded %s (torch %s)", metadata.get("source"), metadata.get("torch_version"))
+        logger.info("Warmed kernels in %.1fs", engine.warmup())
 
     server = build_server(settings, engine)
     logger.info("Listening on http://%s:%s/v1/systemone", settings.host, settings.port)

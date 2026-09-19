@@ -37,6 +37,34 @@ SemIf requires **exactly one visible CUDA device**, hence `CUDA_VISIBLE_DEVICES`
 `expandable_segments` is not optional on a 12GB card: without it the allocator fragments and a
 4B model OOMs mid-batch.
 
+Install `flash-linear-attention` too. Qwen3.5 uses gated delta rule, and without it
+transformers silently falls back to a reference PyTorch implementation:
+
+```bash
+uv pip install flash-linear-attention
+```
+
+This needs a Python with development headers. A distro Python without them leaves Triton
+unable to compile at runtime, so prefer a uv-managed interpreter
+(`UV_PYTHON_PREFERENCE=only-managed uv venv --python 3.12`).
+
+## Performance
+
+Measured on one RTX 3080 Ti (12GB) with Qwen3.5-4B, driving a 40-control page through
+jev-ultrafast's own client, 3 runs:
+
+| Configuration | Decision latency |
+| --- | ---: |
+| Reference kernels, prefill per round | 1978 ms |
+| `flash-linear-attention` + reused prefill | **1273 ms** |
+| Hosted Jev, published median | 178 ms |
+
+The server issues a warmup decision at startup. Without it the first request pays ~10s of
+Triton compilation. The remaining gap to hosted Jev is model and hardware, not protocol: a
+single 2918-token prefill of a 4B model on this card is ~0.35s before any decision is scored.
+`causal_conv1d` would remove one more fallback kernel, but this box's nvcc is CUDA 13 against
+a cu128 torch, so it was not built.
+
 Point a client at it:
 
 ```bash

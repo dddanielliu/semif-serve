@@ -81,6 +81,25 @@ class SemIfEngine:
     def metadata(self) -> dict:
         return dict(self._metadata)
 
+    def warmup(self) -> float:
+        """Score one throwaway decision so the first real request does not pay for JIT.
+
+        Triton compiles the linear-attention kernels on first use, which cost ~10s of a
+        ~1.3s request when it lands on a client instead of on startup.
+        """
+        started = time.perf_counter()
+        self.score(
+            "Warmup state for kernel compilation.",
+            [
+                {
+                    "id": "warmup",
+                    "question": "Is this a warmup?",
+                    "options": [{"id": "true", "description": "Yes"}, {"id": "false", "description": "No"}],
+                }
+            ],
+        )
+        return time.perf_counter() - started
+
     def score(self, state: Any, decisions: list[dict]) -> tuple[list[dict], dict]:
         from semif_phase1.runoff import score_options
 
