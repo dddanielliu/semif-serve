@@ -13,13 +13,14 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from .config import Settings
+from .config import JEV_ALIASES, MODEL_RELEASE_DATE, Settings
 from .engine import Engine
 from .errors import InvalidRequest, ProtocolError, Unauthorized
 from .protocol import parse_request
 from .translate import answer_for, decision_for
 
 ENDPOINT = "/v1/systemone"
+MODELS = "/v1/models"
 HEALTH = "/health"
 MAX_BODY_BYTES = 32 * 1024 * 1024
 
@@ -40,6 +41,30 @@ class Service:
             supplied = header[7:].strip()
         if not secrets.compare_digest(supplied, expected):
             raise Unauthorized("Invalid or missing API key")
+
+    def models(self) -> dict:
+        """The documented `{name, description, release_date}` listing.
+
+        The served model is named first, then the Jev aliases, so a TypeSafe SDK listing
+        models sees something it recognises and its default `jev-latest` resolves here.
+        """
+        served = self.engine.name
+        entries = [
+            {
+                "name": served,
+                "description": f"SemIf option-logit readout on {served}, served over the Jev protocol.",
+                "release_date": MODEL_RELEASE_DATE,
+            }
+        ]
+        entries += [
+            {
+                "name": alias,
+                "description": f"Accepted for TypeSafe SDK compatibility. Resolves to {served}.",
+                "release_date": MODEL_RELEASE_DATE,
+            }
+            for alias in JEV_ALIASES
+        ]
+        return {"models": entries}
 
     def health(self) -> dict:
         return {
@@ -94,10 +119,15 @@ def make_handler(service: Service):
             self._send(error.status, error.body())
 
         def do_GET(self):
-            if self.path.split("?")[0] != HEALTH:
-                self._send(404, {"error": {"type": "not_found", "message": "Unknown path"}})
+            path = self.path.split("?")[0]
+            if path == HEALTH:
+                self._send(200, service.health())
                 return
-            self._send(200, service.health())
+            if path == MODELS:
+                # Listing models needs no key: it is how a client discovers what to ask for.
+                self._send(200, service.models())
+                return
+            self._send(404, {"error": {"type": "not_found", "message": "Unknown path"}})
 
         def do_POST(self):
             path = self.path.split("?")[0]

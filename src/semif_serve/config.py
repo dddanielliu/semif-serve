@@ -16,6 +16,13 @@ DEFAULT_MAX_BATCH = 12
 
 LOOPBACK = ("127.0.0.1", "::1", "localhost")
 
+# TypeSafe's SDKs default to `jev-latest`, and their docs also publish `jev-preview`. Both are
+# listed and accepted so those clients work unchanged. The request's `model` field is not
+# otherwise validated: Jev does not document rejecting an unknown name, and refusing one would
+# only break callers this server exists to support.
+JEV_ALIASES = ("jev-latest", "jev-preview")
+MODEL_RELEASE_DATE = "2026-09-19"
+
 
 class ConfigError(Exception):
     """Refuse to start rather than serve on an unsafe or impossible configuration."""

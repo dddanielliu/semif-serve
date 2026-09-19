@@ -10,8 +10,14 @@ URL and nothing else.
 
 ```
 POST /v1/systemone          choice · score · noul, mixed freely in one request
+GET  /v1/models             the served model, plus the jev-latest / jev-preview aliases
 GET  /health
 ```
+
+TypeSafe's SDKs default to `model: "jev-latest"`, so that name and `jev-preview` are listed and
+accepted. The `model` field is otherwise not validated — Jev does not document rejecting an
+unknown name, and refusing one would only break the clients this exists to serve. Every
+response reports the model that actually answered.
 
 ## What it does
 

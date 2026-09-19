@@ -176,3 +176,34 @@ def test_malformed_json_is_422_not_a_crash(live):
         raise AssertionError("expected an error status")
     except urllib.error.HTTPError as error:
         assert error.code == 422
+
+
+def test_models_listing_matches_the_published_shape(service):
+    body = service.models()
+    assert set(body) == {"models"}
+    for entry in body["models"]:
+        assert set(entry) == {"name", "description", "release_date"}
+        assert entry["name"] and entry["description"]
+        assert len(entry["release_date"]) == 10 and entry["release_date"][4] == "-"
+
+
+def test_models_advertises_the_served_model_and_the_jev_aliases(service):
+    names = [entry["name"] for entry in service.models()["models"]]
+    assert names[0] == "semif-stub", "the real model is named first"
+    # TypeSafe SDKs default to jev-latest; the docs also publish jev-preview.
+    assert "jev-latest" in names and "jev-preview" in names
+
+
+def test_models_is_reachable_without_a_key(live):
+    """Listing is how a client discovers what to ask for, so it must not be gated."""
+    status, body = call(live, "/v1/models")
+    assert status == 200
+    assert "jev-latest" in [entry["name"] for entry in body["models"]]
+
+
+def test_an_unrecognised_model_name_is_still_answered(service):
+    """Jev does not document rejecting one, and refusing would break the clients we serve."""
+    response = service.systemone(
+        {"model": "jev-1.13.0", "state": "s", "questions": {"q": {"type": "noul", "instructions": "?"}}}
+    )
+    assert 0.0 <= response["answers"]["q"]["noul"] <= 1.0
