@@ -56,14 +56,28 @@ jev-ultrafast's own client, 3 runs:
 | Configuration | Decision latency |
 | --- | ---: |
 | Reference kernels, prefill per round | 1978 ms |
-| `flash-linear-attention` + reused prefill | **1273 ms** |
+| `flash-linear-attention` + reused prefill | 1273 ms |
+| ...plus batched answer-slot verification | **1164 ms** |
 | Hosted Jev, published median | 178 ms |
 
 The server issues a warmup decision at startup. Without it the first request pays ~10s of
-Triton compilation. The remaining gap to hosted Jev is model and hardware, not protocol: a
-single 2918-token prefill of a 4B model on this card is ~0.35s before any decision is scored.
-`causal_conv1d` would remove one more fallback kernel, but this box's nvcc is CUDA 13 against
-a cu128 torch, so it was not built.
+Triton compilation.
+
+Profiling one realistic browser-agent request (2532-token state, three questions, 40 targets)
+shows where the remaining time goes:
+
+| Cost | Share |
+| --- | ---: |
+| State prefill | 47% |
+| Suffix forward | 42% |
+| Tokenization | 9% |
+| Cache replicate, other | 1% |
+
+Roughly 89% is model forward compute. That is a property of running a 4B model over a
+2500-token state on this card, not of the protocol, and no amount of serving work removes it.
+Closing the rest of the gap to Jev means a smaller model or faster hardware. `causal_conv1d`
+would remove one more fallback kernel, but this box's nvcc is CUDA 13 against a cu128 torch,
+so it was not built.
 
 Point a client at it:
 
@@ -109,10 +123,16 @@ decisions at all. Qwen3-0.6B runs but chooses poorly.
 The request and response shapes match the published Jev schema, including `usage` and the
 401/422/429/529 error codes. Three things are honestly different:
 
-- **`confidence` is derived, not calibrated.** Jev returns a confidence but does not document
-  how it is computed. This returns the mass on the strongest option. It moves the right way
-  and is always in `[0, 1]`, but it is not comparable to Jev's number. SemIf states plainly
-  that its probabilities are uncalibrated; that caveat carries through.
+- **`confidence` matches Jev for `score`, and is inferred for `choice`.** Jev's docs call it
+  "a statistic computed from the probability distribution" and decline to give the formula.
+  Their published score example pins it down: levels at `0.0/0.7/0.3` give `sigma = 0.4583`
+  against a maximum of `(n-1)/2`, so `1 - sigma/sigma_max = 0.5417`, and Jev publishes `0.54`.
+  Max-probability, normalised entropy and top-two margin give 0.70, 0.44 and 0.40, so the
+  match is not a coincidence. Choice options are unordered and sigma is meaningless for them,
+  and no worked choice example publishes a non-degenerate confidence, so choice uses
+  normalised entropy `1 - H/log(n)` — the standard categorical dispersion measure, matching
+  the documented "flat is low, peaked is high". That one is inferred, not confirmed.
+  Separately, the underlying probabilities remain uncalibrated, as SemIf states.
 - **Runoff distributions are a product, not a single softmax.** For decisions above the option
   ceiling, `P(option) = P(its group) · P(option | group)`. It is normalised over every option
   and no candidate is dropped, but it is not what one pass over all of them would produce.

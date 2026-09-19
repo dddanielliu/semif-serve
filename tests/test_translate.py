@@ -1,7 +1,7 @@
 import pytest
 
 from semif_serve.protocol import Question
-from semif_serve.translate import answer_for, confidence, decision_for, options_for
+from semif_serve.translate import answer_for, choice_confidence, decision_for, options_for, score_confidence
 
 
 def question(kind, criteria, instructions="Why?"):
@@ -48,12 +48,10 @@ def test_noul_defaults_to_yes_and_no_but_honours_criteria():
 
 def test_choice_answer_matches_the_published_shape():
     answer = answer_for(question("choice", {"a": "A", "b": "B"}), ["a", "b"], [0.25, 0.75])
-    assert answer == {
-        "type": "choice",
-        "choice": "b",
-        "probabilities": {"a": 0.25, "b": 0.75},
-        "confidence": 0.75,
-    }
+    assert answer["type"] == "choice"
+    assert answer["choice"] == "b"
+    assert answer["probabilities"] == {"a": 0.25, "b": 0.75}
+    assert answer["confidence"] == pytest.approx(choice_confidence([0.25, 0.75]))
 
 
 def test_score_answer_is_the_probability_weighted_mean_with_a_legend():
@@ -64,7 +62,8 @@ def test_score_answer_is_the_probability_weighted_mean_with_a_legend():
     assert answer["score"] == pytest.approx(1.3)
     assert answer["legend"] == {"0": "Cosmetic", "1": "Degraded", "2": "Blocking"}
     assert answer["probabilities"] == {"0": 0.0, "1": 0.7, "2": 0.3}
-    assert answer["confidence"] == pytest.approx(0.7)
+    # Jev publishes 0.54 for exactly this distribution.
+    assert answer["confidence"] == pytest.approx(0.54, abs=0.005)
 
 
 def test_noul_answer_is_only_the_probability_of_yes():
@@ -73,10 +72,27 @@ def test_noul_answer_is_only_the_probability_of_yes():
     assert "confidence" not in answer and "probabilities" not in answer
 
 
-def test_confidence_tracks_concentration():
-    assert confidence([0.5, 0.5]) == 0.5
-    assert confidence([0.9, 0.1]) == 0.9
-    assert confidence([]) == 0.0
+def test_score_confidence_reproduces_the_published_value():
+    """The documented score example is the only published confidence number to calibrate on."""
+    assert score_confidence([0.0, 0.7, 0.3]) == pytest.approx(0.5417, abs=1e-4)
+
+
+def test_confidence_is_zero_when_flat_and_one_when_peaked():
+    """The documented semantics: a flat shape is low confidence, a single peak is high."""
+    for measure in (score_confidence, choice_confidence):
+        assert measure([1.0, 0.0, 0.0]) == pytest.approx(1.0)
+        assert measure([0.0, 0.0, 1.0]) == pytest.approx(1.0)
+        assert measure([1.0]) == 1.0
+    assert choice_confidence([1 / 3, 1 / 3, 1 / 3]) == pytest.approx(0.0)
+    # Score spread is maximal with the mass at both ends, not spread evenly.
+    assert score_confidence([0.5, 0.0, 0.5]) == pytest.approx(0.0)
+    assert score_confidence([0.0, 1.0, 0.0]) == pytest.approx(1.0)
+
+
+def test_confidence_stays_inside_the_range_clients_validate():
+    for probabilities in ([0.5, 0.5], [1.0, 0.0], [0.2, 0.3, 0.5], [0.0, 0.0, 1.0]):
+        for measure in (score_confidence, choice_confidence):
+            assert 0.0 <= measure(probabilities) <= 1.0
 
 
 def test_misaligned_scores_are_a_server_fault_not_a_silent_answer():

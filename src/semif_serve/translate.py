@@ -15,14 +15,42 @@ from .protocol import Question, render
 NOUL_DEFAULTS = {"true": "Yes", "false": "No"}
 
 
-def confidence(probabilities: list[float]) -> float:
-    """How concentrated the distribution is, as the mass on its strongest option.
+def score_confidence(probabilities: list[float]) -> float:
+    """How peaked an ordered level distribution is: 1 - sigma / sigma_max.
 
-    Jev publishes a `confidence` field but not how it is derived, and SemIf states plainly
-    that its probabilities are uncalibrated. This is a declared, monotone stand-in: it moves
-    the right way, it is always in [0, 1], and it is not comparable to Jev's number.
+    Recovered from Jev's own published score example. Levels 0/1/2 at 0.0/0.7/0.3 give
+    sigma = 0.4583 against a maximum of (n-1)/2 = 1.0, so 1 - 0.4583 = 0.5417, and Jev
+    publishes 0.54. Max-probability (0.70), normalised entropy (0.44) and top-two margin
+    (0.40) all miss it, so this is the statistic Jev uses for score.
     """
-    return max(probabilities) if probabilities else 0.0
+    count = len(probabilities)
+    if count < 2:
+        return 1.0
+    mean = sum(index * value for index, value in enumerate(probabilities))
+    variance = sum(index * index * value for index, value in enumerate(probabilities)) - mean * mean
+    deviation = math.sqrt(max(variance, 0.0))
+    # Spread is greatest with the mass split between the two end levels.
+    return _clamp(1.0 - deviation / ((count - 1) / 2))
+
+
+def choice_confidence(probabilities: list[float]) -> float:
+    """How peaked an unordered distribution is: 1 - H / log(n).
+
+    Choice options have no ordering, so score's standard deviation has no meaning here and
+    Jev does not publish this one. Normalised entropy is the usual dispersion measure for a
+    categorical distribution and matches the documented behaviour: a flat shape scores 0, a
+    single peak scores 1. Inferred, not verified against a published value.
+    """
+    count = len(probabilities)
+    if count < 2:
+        return 1.0
+    entropy = -sum(value * math.log(value) for value in probabilities if value > 0)
+    return _clamp(1.0 - entropy / math.log(count))
+
+
+def _clamp(value: float) -> float:
+    """Keep float noise inside the [0, 1] range every Jev client validates against."""
+    return min(1.0, max(0.0, value))
 
 
 def options_for(question: Question) -> list[dict]:
@@ -79,7 +107,7 @@ def answer_for(question: Question, option_ids: list[str], probabilities: list[fl
         return {
             "type": "score",
             "score": sum(int(index) * value for index, value in distribution.items()),
-            "confidence": confidence(probabilities),
+            "confidence": score_confidence(probabilities),
             "legend": legend,
             "probabilities": distribution,
         }
@@ -89,5 +117,5 @@ def answer_for(question: Question, option_ids: list[str], probabilities: list[fl
         "type": "choice",
         "choice": best,
         "probabilities": distribution,
-        "confidence": confidence(probabilities),
+        "confidence": choice_confidence(probabilities),
     }
