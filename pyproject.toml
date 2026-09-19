@@ -1,0 +1,36 @@
+[project]
+name = "semif-serve"
+version = "0.1.0"
+description = "A Jev-compatible HTTP decision endpoint backed by SemIf"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = ["semif-phase1"]
+
+[project.scripts]
+semif-serve = "semif_serve.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = ["pytest>=8.4,<9", "ruff>=0.14,<1"]
+
+# SemIf is vendored as a git submodule so the pinned scoring code travels with the server.
+[tool.uv.sources]
+semif-phase1 = { path = "vendor/SemIf", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/semif_serve"]
+
+[tool.ruff]
+line-length = 120
+# The submodule is upstream code with its own conventions.
+extend-exclude = ["vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

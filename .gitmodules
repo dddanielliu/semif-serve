@@ -1,0 +1,4 @@
+[submodule "vendor/SemIf"]
+	path = vendor/SemIf
+	url = git@github.com:dddanielliu/SemIf.git
+	branch = wide-options
