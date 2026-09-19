@@ -116,6 +116,9 @@ def make_handler(service: Service):
             self.wfile.write(body)
 
         def _fail(self, error: ProtocolError) -> None:
+            # A refused request must leave a reason behind. The client only sees a status code,
+            # so without this a 422 is unexplainable from the server side.
+            logger.warning("%s %s: %s", error.status, error.kind, error.message)
             self._send(error.status, error.body())
 
         def do_GET(self):
